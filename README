@@ -2,6 +2,8 @@
 Before provisioning EC2 servers
 ===============================
 
+1)
+
 export BOTO_CONFIG=~/.aws/credentials
 
 That file should look like:
@@ -9,6 +11,11 @@ That file should look like:
 [Credentials]
 aws_access_key_id = blahblah
 aws_secret_access_key = blahblahblahblah
+
+2)
+
+Create an SSH public/private key pair called 'ec2ansible' in your ~/.ssh directory:
+   ssh-keygen RET ec2ansible RET RET
 
 ======
 Origin

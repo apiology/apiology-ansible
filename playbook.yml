@@ -3,21 +3,8 @@
   hosts: osx
   sudo: True
   tasks:
-    # - name: Make sure a python module i
-    # - name: Install python, needed for boto, needed for Ansible EC2 provisioning
-    #   macports: name=python state=present
-    # - name: select python
-    #   shell: port select --set python python27
-    # - name: Install pip, needed for ansible to recognize we have boto, needed for Ansible EC2 provisioning
-    #   macports: name=py-pip state=present
-    # - name: Install pip-select, needed to be able to use pip27 as the default pip
-    #   macports: name=pip_select state=present      
-    # - name: select pip
-    #   shell: port select --set pip pip27      w
     - name: Install boto, needed for Ansible EC2 provisioning
       pip: name=boto
-    # - name: Install six, needed for Ansible EC2 provisioning
-    #   macports: name=six
 - name: Test EC2 interface
   hosts: localhost
   vars:
@@ -120,8 +107,9 @@
       with_items: ec2.tagged_instances
       when: item.public_dns_name is defined
 
-# - name: configure webservers
-#   hosts: web:&production
-#   sudo: True
-#   roles:
-#     - web
+- name: configure webservers
+  hosts: web:&production
+  sudo: True
+  tasks:
+    - name: install nginx
+      apt: name=nginx update_cache=yes
