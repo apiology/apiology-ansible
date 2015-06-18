@@ -1,0 +1,17 @@
+===============================
+Before provisioning EC2 servers
+===============================
+
+export BOTO_CONFIG=~/.aws/credentials
+
+That file should look like:
+
+[Credentials]
+aws_access_key_id = blahblah
+aws_secret_access_key = blahblahblahblah
+
+======
+Origin
+======
+
+I started a number of these playbooks from examples in the book 'Ansible: Up and Running'.

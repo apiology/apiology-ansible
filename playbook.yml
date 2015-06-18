@@ -2,8 +2,67 @@
   hosts: osx
   sudo: True
   tasks:
+    - name: Install python, needed for boto, needed for Ansible EC2 provisioning
+      macports: name=python state=present
+    - name: select python
+      shell: port select --set python python27
     - name: Install boto, needed for Ansible EC2 provisioning
       macports: name=py-boto state=present
+    - name: Install six, needed for Ansible EC2 provisioning
+      macports: name=py-six state=present      
+- name: Create an Ubuntu instance on Amazon EC2
+  hosts: localhost
+  tasks:
+    - name: start the instance
+      ec2:
+        image: ami-8caalce4
+        region: us-east-1
+        instance_type: m3.micro # XXX
+        key_name: mykey
+        group: [web, ssh, outbound]
+        instance_tags: { Name: ansiblebook, type: web, env: production }
+- name: create a new keypair
+  hosts: localhost
+  tasks:
+    - name: create mykey
+      ec2_key: name=mykey region=us-east-1 # XXX mykey - introduce var?
+      register: keypair
+    - name: write the key to a file if it did not exist already
+      copy:
+        dest: files/mykey.pem
+        content: {{ keypair.key.private_key }}
+        mode: 0600
+      when: keypair.changed
+- name: web security group
+  ec2_group:
+    name: web
+    description: allow http and https acesss
+    rules:
+      - proto: tcp
+        from_port: 80
+        to_port: 80
+        cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        from_port: 443
+        to_port: 443
+        cidr_port: 0.0.0.0/0
 
+- name: ssh security group
+  ec2_group:
+    name: ssh
+    description: allow ssh access
+    rules:
+      - proto: tcp
+        from_port: 22
+        to_port: 22
+        cidr_ip: 0.0.0.0/0
 
-
+- name: outbound group
+  ec2_group:
+    name: outbound
+    description: allow outbound connections to the internet
+    region: "{{ region}}"
+    rules_egress:
+      - proto: all
+        cidr_ip: 0.0.0.0/0
+ 
