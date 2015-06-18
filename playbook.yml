@@ -1,0 +1,9 @@
+- name: EC2 Provisioner
+  hosts: osx
+  sudo: True
+  tasks:
+    - name: Install boto, needed for Ansible EC2 provisioning
+      macports: name=py-boto state=present
+
+
+
