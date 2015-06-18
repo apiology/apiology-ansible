@@ -1,68 +1,127 @@
+# XXX adjust stuff in hosts file to recognize macs should use python in /opt/local/bin/python
 - name: EC2 Provisioner
   hosts: osx
   sudo: True
   tasks:
-    - name: Install python, needed for boto, needed for Ansible EC2 provisioning
-      macports: name=python state=present
-    - name: select python
-      shell: port select --set python python27
+    # - name: Make sure a python module i
+    # - name: Install python, needed for boto, needed for Ansible EC2 provisioning
+    #   macports: name=python state=present
+    # - name: select python
+    #   shell: port select --set python python27
+    # - name: Install pip, needed for ansible to recognize we have boto, needed for Ansible EC2 provisioning
+    #   macports: name=py-pip state=present
+    # - name: Install pip-select, needed to be able to use pip27 as the default pip
+    #   macports: name=pip_select state=present      
+    # - name: select pip
+    #   shell: port select --set pip pip27      w
     - name: Install boto, needed for Ansible EC2 provisioning
-      macports: name=py-boto state=present
-    - name: Install six, needed for Ansible EC2 provisioning
-      macports: name=py-six state=present      
-- name: Create an Ubuntu instance on Amazon EC2
+      pip: name=boto
+    # - name: Install six, needed for Ansible EC2 provisioning
+    #   macports: name=six
+- name: Test EC2 interface
   hosts: localhost
+  vars:
+    region: us-east-1
+    instance_type: t2.micro
+    count: 1
   tasks:
+    - name: create a vpc
+      ec2_vpc:
+        region: "{{ region }}"
+        internet_gateway: True
+        resource_tags: { Name: book, env: production } # XXX
+        cidr_block: "10.0.0.0/16"
+        subnets:
+          - cidr: 10.0.0.0/24
+            resource_tags:
+              env: production
+              tier: web
+          - cidr: 10.0.1.0/24
+            resource_tags:
+              env: production
+              tier: db
+        route_tables:
+          - subnets:
+            - 10.0.0.0/24
+            - 10.0.1.0/24
+            routes:
+            - dest: 0.0.0.0/0
+              gw: igw
+      register: vpc
+      
+    - set_fact: vpc_id="{{ vpc.vpc_id }}"
+    - set_fact: web_vpc_subnet_id="{{ vpc.subnets[0].id }}"
+    - set_fact: web_db_subnet_id="{{ vpc.subnets[1].id }}"        
+
+    - name: web security group
+      ec2_group:
+        name: vpc-web
+        region: "{{ region }}"        
+        description: allow http and https acesss
+        vpc_id: "{{ vpc_id }}"
+        rules:
+          - proto: tcp
+            from_port: 80
+            to_port: 80
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 443
+            to_port: 443
+            cidr_port: 0.0.0.0/0
+
+    - name: ssh security group
+      ec2_group:
+        name: vpc-ssh
+        region: "{{ region }}"        
+        description: allow ssh access
+        vpc_id: "{{ vpc_id }}"        
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+
+    - name: outbound group
+      ec2_group:
+        name: vpc-outbound
+        description: allow outbound connections to the internet
+        region: "{{ region }}"
+        vpc_id: "{{ vpc_id }}"
+        rules_egress:
+          - proto: all
+            cidr_ip: 0.0.0.0/0
+
+    - name: get a fresly updated trusty AMI
+      ec2_ami_search: distro=ubuntu release=trusty virt=hvm region={{ region }}
+      register: ubuntu_image
+            
     - name: start the instance
       ec2:
-        image: ami-8caalce4
-        region: us-east-1
-        instance_type: m3.micro # XXX
-        key_name: mykey
-        group: [web, ssh, outbound]
-        instance_tags: { Name: ansiblebook, type: web, env: production }
-- name: create a new keypair
-  hosts: localhost
-  tasks:
-    - name: create mykey
-      ec2_key: name=mykey region=us-east-1 # XXX mykey - introduce var?
-      register: keypair
-    - name: write the key to a file if it did not exist already
-      copy:
-        dest: files/mykey.pem
-        content: {{ keypair.key.private_key }}
-        mode: 0600
-      when: keypair.changed
-- name: web security group
-  ec2_group:
-    name: web
-    description: allow http and https acesss
-    rules:
-      - proto: tcp
-        from_port: 80
-        to_port: 80
-        cidr_ip: 0.0.0.0/0
-      - proto: tcp
-        from_port: 443
-        to_port: 443
-        cidr_port: 0.0.0.0/0
+        image: "{{ ubuntu_image.ami }}"
+        region: "{{ region }}"
+        instance_type: "{{ instance_type }}"
+        assign_public_ip: True
+        key_name: vbutility # XXX: make this a variable
+        vpc_subnet_id: "{{ web_vpc_subnet_id }}"
+        group: [vpc-web, vpc-ssh, vpc-outbound]
+        instance_tags: { Name: book, type: web, env: production }
+        exact_count: "{{ count }}"
+        count_tag: { type: web }
+        wait: yes
+      register: ec2
 
-- name: ssh security group
-  ec2_group:
-    name: ssh
-    description: allow ssh access
-    rules:
-      - proto: tcp
-        from_port: 22
-        to_port: 22
-        cidr_ip: 0.0.0.0/0
+    - name: add the instance to web and production groups
+      add_host: hostname={{ item.public_dns_name  }} groups=web,production
+      with_items: ec2.tagged_instances
+      when: item.public_dns_name is defined
 
-- name: outbound group
-  ec2_group:
-    name: outbound
-    description: allow outbound connections to the internet
-    region: "{{ region}}"
-    rules_egress:
-      - proto: all
-        cidr_ip: 0.0.0.0/0
- 
+    - name: wait for ssh server to be running
+      wait_for: host={{ item.public_dns_name }} port=22 search_regex=OpenSSH
+      with_items: ec2.tagged_instances
+      when: item.public_dns_name is defined
+
+# - name: configure webservers
+#   hosts: web:&production
+#   sudo: True
+#   roles:
+#     - web
