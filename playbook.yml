@@ -83,7 +83,7 @@
           - proto: all
             cidr_ip: 0.0.0.0/0
 
-    - name: get a fresly updated trusty AMI
+    - name: get a freshly updated trusty AMI
       ec2_ami_search: distro=ubuntu release=trusty virt=hvm region={{ region }}
       register: ubuntu_image
             
